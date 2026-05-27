@@ -1,0 +1,98 @@
+# -*- coding: utf-8 -*-
+## owner: paralyace-spec@gmail.com
+## date: 2026-05-27
+## desc: 使用多线程批量探测主机是否联通
+# 1️⃣ 定义执行函数：ping_host
+# 2️⃣ 函数里用 subprocess.run() → 返回 CompletedProcess (在 run_cmd 中封装)  比起OS.system subprocess.run返回对象有返回码和输出等可以調用
+# 3️⃣ with ThreadPoolExecutor 打开线程池
+# 4️⃣ executor.submit() 把任务“扔”进去 → 返回 Future
+# 5️⃣ as_completed() 遍历 Future
+# 6️⃣ 哪个 Future 先完成，就 future.result() 拿结果
+#    注意：实际逻辑已实现在下方的 main 函数中
+
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import subprocess
+import logging
+from pathlib import Path
+from datetime import datetime
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
+def run_cmd(cmd):
+    try:
+        result = subprocess.run(
+            cmd,
+            shell=False,
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            return True, result.stdout.strip()
+        else:
+            return False, result.stderr.strip()
+    except subprocess.TimeoutExpired:
+        return False, "timeout"
+    except Exception as e:
+        return False, str(e)
+
+def ping_host(ip):
+    """
+    返回 (ip, True/False)
+    """
+    cmd = ["ping", "-c", "1", "-W", "2", ip]
+    ok, msg = run_cmd(cmd)
+
+    if ok:
+        logging.info(f"{ip} ✅ 联通")
+    else:
+        logging.warning(f"{ip} ❌ 不通 | {msg}")
+
+    return ip, ok
+
+def main():
+    hosts_file = Path("hosts.txt")
+    if not hosts_file.exists():
+        logging.error("hosts.txt 不存在")
+        return
+
+    ips = hosts_file.read_text().strip().splitlines()
+
+    alive = 0
+    dead = 0
+
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        futures = [executor.submit(ping_host, ip) for ip in ips]
+
+        for future in as_completed(futures):
+            try:
+                ip, ok = future.result(timeout=5)
+            except TimeoutError:
+                logging.error("任务超时")
+                dead += 1
+                continue
+            except Exception as e:
+                logging.error(f"任务异常: {e}")
+                dead += 1
+                continue
+
+            if ok:
+                alive += 1
+            else:
+                dead += 1
+
+    print("\n=== 探测结果 ===")
+    print(f"存活: {alive}")
+    print(f"失联: {dead}")
+
+    with open("report.txt", "w", encoding="utf-8") as f:
+        f.write(f"扫描时间: {datetime.now()}\n")
+        f.write(f"存活: {alive}\n")
+        f.write(f"失联: {dead}\n")
+
+if __name__ == "__main__":
+    main()
