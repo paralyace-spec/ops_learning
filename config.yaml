@@ -1,0 +1,12 @@
+# config.yaml
+scan:
+  workers: 100           # 并发数（asyncio 不用线程，这里只是语义）
+  timeout: 3             # 超时时间（秒）
+  output_dir: "results"
+
+targets:
+  - "8.8.8.8"
+  - "1.1.1.1"
+  - "127.0.0.1"
+  - "192.168.1.1"
+  - "10.0.0.1"
